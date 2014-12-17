@@ -134,7 +134,7 @@ class GalilInterface():
 
 		if dr:
 			print "Setting up data-record transfers"
-			self.initUDPMessageSocket()
+			self.__initUDPMessageSocket()
 
 		if self.doUDPFileLog:
 			self.fileH = open("posvelDR.txt", "a")
@@ -245,7 +245,7 @@ class GalilInterface():
 		return self._receiveUDP(socketConnection)
 
 
-	def initUDPMessageSocket(self):
+	def __initUDPMessageSocket(self):
 
 		print "Opening UDP Socket"
 
@@ -437,21 +437,33 @@ class GalilInterface():
 		routines = codeFile.read()
 		codeFile.close()
 
-		self.con.sendall("DL\r")					# Enter program download mode
+		# Enter program download mode
+		self.con.sendall("DL\r")
 
-		lineNum = 1							# for printing a nice representation of the code
+		# for printing a nice representation of the code
+		lineNum = 1
 
 		print "Starting download of galilcode routines"
 		print "LineNum, Code"
 		for line in routines.split("\n"):
 
-			line = line.rstrip()					# Strip whatever variety of \r\n chars are in the file
+			# Strip whatever variety of \r\n chars are in the file
+			line = line.rstrip()
 
 			if stripComments and (line == "" or line.strip(" ")[0:2] == "NO"):
 				continue # ignore blank and comment lines if told to
 
-			cleanedLine = line + "\r"				# the Galil wants carriage-return (only!) line endings.
-										# I wonder if the original galil protocol design work was done on a mac?
+			elif line == "":
+				line = "'"
+				# add a comment character ("'") to all empty lines
+				# so they don't break the galil
+				# the galil terminal does this silently, behind the scenes, when you send a code file.
+				# very confusing, since the manual states that empty lines are not allowed, but they
+				# work anyways within the galilTerminal application
+
+			# the Galil wants carriage-return (only!) line endings.
+			# I wonder if the original galil protocol design work was done on a mac?
+			cleanedLine = line + "\r"
 
 			if len(cleanedLine) > 80:				# Check line lengths
 				print "Error - Line %d too long" % lineNum
@@ -459,14 +471,18 @@ class GalilInterface():
 				print "Line contents: ", cleanedLine
 				raise ValueError
 
-			print str(lineNum).zfill(4), cleanedLine.rstrip()	# Print linenum and line (and strip the extra \r / \n) (for debugging)
+			# Print linenum and line (and strip the extra \r / \n) (for debugging)
+			print str(lineNum).zfill(4), cleanedLine.rstrip()
 			lineNum += 1
 
 			self.con.sendall(cleanedLine)				# finally, send the line
 			try:
-				tmp = self.con.recv(256)
-				if tmp and tmp != ":": # and check for a response
-										# (there shouldn't be. You only get a response of there is an error)
+				if self.con.recv(256) and not globalConf.fakeGalil:
+					# and check for a response
+					# (there shouldn't be. You only get a response of there is an error)
+					# Note: In "download" mode, the galil *does not* respond with ":" after each line
+					# If you're seeing those, there is a problem somewhere, or you're not in download mode.
+					# The galil only responds with ":"/"?" in interactive mode.
 					raise ValueError("Error downloading galil code")
 			except socket.error:
 				pass
@@ -501,14 +517,6 @@ class GalilInterface():
 		self.pollPosTh.start()
 		self.threads.append(self.pollPosTh)
 
-
-
-		#for x in range(self.numAxis):				# the GUI monitors the calil status by watching these arrays.
-		#							# At the moment, if they are not at least filled with 0's, the gui errors.
-		#							# Probably better to fix the GUI, but this is easier ATM.
-		#		self.pos.append(0)
-		#		self.vel.append(0)
-		#		self.inMot.append(0)
 
 
 	def flushSocketRecvBuf(self, socketCon):
@@ -752,9 +760,9 @@ class GalilInterface():
 
 		responseStr = self.sendAndReceive( command , debug = False)
 
+		response = bool(float(responseStr))
 
-		#print "PositionStr - ", positionStr
-		return responseStr
+		return response
 
 	def endMotion(self, axis = None):
 		if axis != None:
