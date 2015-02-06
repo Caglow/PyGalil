@@ -1,2 +1,0 @@
-
-fakeGalil = False
